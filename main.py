@@ -12,59 +12,163 @@ Created on Thu Sep 26 11:44:59 2019
 
 from requests import get
 from requests import codes
+from os import path
+from os import mkdir
+from shutil import rmtree
+from argparse import ArgumentParser
+from datetime import date
+from datetime import datetime
 
 BASE_URL = "http://www.omie.es/informes_mercado/"
 
 
-def generate_url(market="diario", session="1", year="2019", month="09",
-                 day="09"):
-    """
-    Generates the url necessary to get the corresponding txt file in
-    the omie page.
-
-    Parameters
-    ----------
-    market : string 
-        which data, diario o intradiario
-    session : string
-        session in case is intradiario
-    year : string
-        year
-    month : string
-        if 1-9 needs to be in format "09"
-    day : string
-        same as month
-
-    Returns
-    -------
-    url : string
-        the url for the specified data
-    """
-
-    if not all(map(lambda x: isinstance(x, str),
-                   [market, session, year, month, day])):
-        raise TypeError("Only strings are allowed")
-
-    if market == "diario":
-        market_code = "PBC_EV_H_1"
-    elif market == "intradiario":
-        market_code = "PIB_EV_H_1_" + session
-
-    date = "_".join([day, month, year])
-    url = BASE_URL + "AGNO_" + str(year) + "/MES_" + str(month) + \
-        "/TXT/INT_" + market_code + "_" + date + "_" + date + ".txt"
-
-    return url
+def parse():
+    parser = ArgumentParser()
+    parser.add_argument("--initial_date", dest="initial_date",
+                        help="Initial date of period or single date",
+                        type=str, default=None)
+    parser.add_argument("--end_date", dest="final_date",
+                        help="Final date of period",
+                        type=str, default=None)
+    parser.add_argument("--market", dest="market",
+                        help="Type of market: diario, intradiario",
+                        default="diario")
+    parser.add_argument("--organize", dest="organize",
+                        help="If you ahve downloaded the files you can\
+                        organize them in a single file", default=False)
+    return parser.parse_args()
 
 
-def retrieve_single_file(url, save=False):
-    """
-    Retrieves only one file. No threading. Serves it as a pandas object
-    or saves it as a csv.
-    """
-    file = get(url)
+class Retriever():
 
-    if not file.status_code == codes.ok:
-        raise "Failure in the connection"
+    def __init__(self, initial_date=None, end_date=None, market=None,
+                 root="./data", diario='diario', intra='intradiario'):
+        self.initial_date = initial_date
+        self.end_date = end_date
+        self.market = market
+        self.path_root = root
+        self.path_diario = path.join(self.path_root, diario)
+        self.path_intradiario = path.join(self.path_root, intra)
 
-    
+        self.generate_tree_folder(root=self.path_root,
+                                  diario=self.path_diario,
+                                  intradiario=self.path_intradiario)
+
+    def generate_url(self, session="1", year="2019",
+                     month="09", day="09"):
+        """
+        Generates the url necessary to get the corresponding txt file in
+        the omie page.
+
+        Parameters
+        ----------
+        market : string
+            which data, diario o intradiario
+        session : string
+            session in case is intradiario
+        year : string
+            year
+        month : string
+            if 1-9 needs to be in format "09"
+        day : string
+            same as month
+
+        Returns
+        -------
+        url : string
+            the url for the specified data
+
+        """
+
+        if not all(map(lambda x: isinstance(x, str),
+                       [self.market, session, year, month, day])):
+            raise TypeError("Only strings are allowed")
+
+        if self.market == "diario":
+            market_code = "PBC_EV_H_1"
+        elif self.market == "intradiario":
+            market_code = "PIB_EV_H_1_" + session
+
+        date = "_".join([day, month, year])
+        url = BASE_URL + "AGNO_" + str(year) + "/MES_" + str(month) + \
+            "/TXT/INT_" + market_code + "_" + date + "_" + date + ".txt"
+
+        return url
+
+    def retrieve_single_file(url):
+        """
+        Retrieves only one file. No threading. Serves it as a pandas object
+        or saves it as a csv.
+        """
+        file = get(url)
+
+        if not file.status_code == codes.ok:
+            raise "Failure in the connection"
+
+        return file
+
+    def generate_tree_folder(self, remove=False):
+        if remove:
+            rmtree(self.path_root)
+
+        if not path.exists(self.path_root):
+            mkdir(self.path_root)
+
+        if not path.exists(self.path_diario):
+            mkdir(self.path_diario)
+
+        if not path.exists(self.path_intradiario):
+            mkdir(self.path_intradiario)
+
+        for i in range(1, 6):
+            intra_specific = path.join(self.path_intradiario,
+                                       "intra_" + str(i))
+            if not path.join(intra_specific):
+                mkdir(intra_specific)
+
+    def obtain_data(self):
+
+        if self.end_date:
+            # TODO: implement getting files per range
+            pass
+        else:
+            if self.market == "diario":
+                url = self.generate_url(market=self.market,
+                                        year=self.initial_date.year,
+                                        month=self.initial_date.month,
+                                        day=self.initial_date.day)
+                file = self.retrieve_single_file(url)
+                name = path.join(self.path_root,
+                                 self.path_diario,
+                                 self.initial_date.year + "_" +
+                                 self.initial_date.month + "_" +
+                                 self.initial_date.day + ".txt")
+                with open(name, "w") as file:
+                    file.write(file.text)
+            elif self.market == "intradiario":
+                # TODO: getting files for all 6 intraday markets
+                pass
+
+
+def convert_dates(initial_date=None, end_date=None):
+    return strptime(initial_date, "%Y-%m-%d"), strptime(end_date, "%Y-%m-%d")
+
+
+def main():
+    parsed = parse()
+
+    if parsed.organize:
+        # TODO: implement function to organize all files in two files
+        # diario and intradiario
+        pass
+    else:
+        initial_date, end_date = convert_dates(parsed.initial_date,
+                                               parsed.end_date)
+        retriever = Retriever(initial_date=initial_date,
+                              end_date=end_date,
+                              market=parsed.market)
+        retriever.obtain_data()
+
+
+if __name__ == "__main__":
+    main()
