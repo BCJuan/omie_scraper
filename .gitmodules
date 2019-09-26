@@ -1,0 +1,3 @@
+[submodule "utils/scraping_utilities"]
+	path = utils/scraping_utilities
+	url = https://github.com/BCJuan/scraping_utilities.git
