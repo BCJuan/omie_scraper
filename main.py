@@ -16,7 +16,10 @@ from os import path
 from os import mkdir
 from shutil import rmtree
 from argparse import ArgumentParser
-from datetime import datetime
+from datetime import datetime, timedelta
+from utils.scraping_utilities import utils
+from multiprocessing.pool import ThreadPool
+from multiprocessing import cpu_count
 
 BASE_URL = "http://www.omie.es/informes_mercado/"
 
@@ -51,8 +54,8 @@ class Retriever():
 
         self.generate_tree_folder()
 
-    def generate_url(self, session="1", year="2019",
-                     month="09", day="09"):
+    def generate_url(self, year="2019",
+                     month="09", day="09", session="1"):
         """
         Generates the url necessary to get the corresponding txt file in
         the omie page.
@@ -124,16 +127,43 @@ class Retriever():
             if not path.exists(intra_specific):
                 mkdir(intra_specific)
 
+    def fetch_url(self, entry):
+        url, path = entry
+        if not path.exists(path):
+            r = get(url, stream=True)
+            if r.status_code == 200:
+                with open(path, 'w') as f:
+                    for chunk in r:
+                        f.write(chunk)
+
+        return path, r.status_code
+
     def obtain_data(self):
 
         if self.end_date:
-            # TODO: implement getting files per range
-            pass
-        else:
-            self.save_single()
+            daterange = [self.initial_date + timedelta(days=x)
+                         for x in range(0, (self.end_date -
+                                            self.initial_date).days + 1)]
 
-    def save_single(self):
-        year, month, day = generate_date_data(self.initial_date)
+            if self.market == "diario":
+                url_list = [
+                        (self.generate_url(i, j, z),
+                         path.join(self.path_diario, i + "_" + j +
+                                   "_" + z + ".txt")) for (i, j, z)
+                        in list(map(generate_date_data, daterange))
+                        ]
+                pool = ThreadPool(cpu_count())
+                results = pool.imap_unordered(self.fetch_url, url_list)
+                pool.close()
+                print(results.get())
+            elif self.market == "intradiario":
+                # TODO: implement getting files per range
+                pass
+        else:
+            self.save_single(self.initial_date)
+
+    def save_single(self, date=None):
+        year, month, day = generate_date_data(date)
         if self.market == "diario":
             url = self.generate_url(year=year, month=month, day=day)
             data = self.retrieve_data_single(url)
@@ -162,29 +192,24 @@ def generate_date_data(dat=None):
     month = str(dat.month)
     day = str(dat.day)
 
-    month, day = ("0" + i for i in (month, day) if len(i) == 1)
+    month, day = ("0" + i if len(i) == 1 else i for i in (month, day))
 
     return year, month, day
 
 
 def main():
     parsed = parse()[0]
-    print(parsed)
-    if parsed.organize:
-        # TODO: implement function to organize all files in two files
-        # diario and intradiario
-        pass
+
+    if parsed.end_date:
+        end_date = convert_date(parsed.end_date)
     else:
-        if parsed.end_date:
-            end_date = convert_date(parsed.end_date)
-        else:
-            end_date = parsed.end_date
-        initial_date = convert_date(parsed.initial_date)
-        print(initial_date)
-        retriever = Retriever(initial_date=initial_date,
-                              end_date=end_date,
-                              market=parsed.market)
-        retriever.obtain_data()
+        end_date = parsed.end_date
+    initial_date = convert_date(parsed.initial_date)
+
+    retriever = Retriever(initial_date=initial_date,
+                          end_date=end_date,
+                          market=parsed.market)
+    retriever.obtain_data()
 
 
 if __name__ == "__main__":
