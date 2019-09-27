@@ -16,7 +16,6 @@ from os import path
 from os import mkdir
 from shutil import rmtree
 from argparse import ArgumentParser
-from datetime import date
 from datetime import datetime
 
 BASE_URL = "http://www.omie.es/informes_mercado/"
@@ -24,19 +23,19 @@ BASE_URL = "http://www.omie.es/informes_mercado/"
 
 def parse():
     parser = ArgumentParser()
-    parser.add_argument("--initial_date", dest="initial_date",
+    parser.add_argument("-i", "--initial_date", dest="initial_date",
                         help="Initial date of period or single date",
                         type=str, default=None)
-    parser.add_argument("--end_date", dest="final_date",
+    parser.add_argument("-e", "--end_date", dest="end_date",
                         help="Final date of period",
                         type=str, default=None)
-    parser.add_argument("--market", dest="market",
+    parser.add_argument("-m", "--market", dest="market",
                         help="Type of market: diario, intradiario",
                         default="diario")
-    parser.add_argument("--organize", dest="organize",
+    parser.add_argument("-o", "--organize", dest="organize",
                         help="If you ahve downloaded the files you can\
                         organize them in a single file", default=False)
-    return parser.parse_args()
+    return parser.parse_known_args()
 
 
 class Retriever():
@@ -50,9 +49,7 @@ class Retriever():
         self.path_diario = path.join(self.path_root, diario)
         self.path_intradiario = path.join(self.path_root, intra)
 
-        self.generate_tree_folder(root=self.path_root,
-                                  diario=self.path_diario,
-                                  intradiario=self.path_intradiario)
+        self.generate_tree_folder()
 
     def generate_url(self, session="1", year="2019",
                      month="09", day="09"):
@@ -95,7 +92,7 @@ class Retriever():
 
         return url
 
-    def retrieve_single_file(url):
+    def retrieve_single_file(self, url):
         """
         Retrieves only one file. No threading. Serves it as a pandas object
         or saves it as a csv.
@@ -105,7 +102,7 @@ class Retriever():
         if not file.status_code == codes.ok:
             raise "Failure in the connection"
 
-        return file
+        return file.text
 
     def generate_tree_folder(self, remove=False):
         if remove:
@@ -133,37 +130,47 @@ class Retriever():
             pass
         else:
             if self.market == "diario":
-                url = self.generate_url(market=self.market,
-                                        year=self.initial_date.year,
-                                        month=self.initial_date.month,
-                                        day=self.initial_date.day)
-                file = self.retrieve_single_file(url)
-                name = path.join(self.path_root,
-                                 self.path_diario,
-                                 self.initial_date.year + "_" +
-                                 self.initial_date.month + "_" +
-                                 self.initial_date.day + ".txt")
+                year, month, day = generate_date_data(self.initial_date)
+                url = self.generate_url(year=year, month=month, day=day)
+                data = self.retrieve_single_file(url)
+                name = path.join(self.path_diario,
+                                 year + "_" + month + "_" + day + ".txt")
+                print(name)
                 with open(name, "w") as file:
-                    file.write(file.text)
+                    file.write(data)
             elif self.market == "intradiario":
                 # TODO: getting files for all 6 intraday markets
                 pass
 
 
-def convert_dates(initial_date=None, end_date=None):
-    return strptime(initial_date, "%Y-%m-%d"), strptime(end_date, "%Y-%m-%d")
+def convert_date(initial_date=None):
+    return datetime.strptime(initial_date, "%Y-%m-%d")
+
+
+def generate_date_data(dat=None):
+    year = str(dat.year)
+    month = str(dat.month)
+    day = str(dat.day)
+
+    month, day = ("0" + i for i in (month, day) if len(i) == 1)
+
+    return year, month, day
 
 
 def main():
-    parsed = parse()
-
+    parsed = parse()[0]
+    print(parsed)
     if parsed.organize:
         # TODO: implement function to organize all files in two files
         # diario and intradiario
         pass
     else:
-        initial_date, end_date = convert_dates(parsed.initial_date,
-                                               parsed.end_date)
+        if parsed.end_date:
+            end_date = convert_date(parsed.end_date)
+        else:
+            end_date = parsed.end_date
+        initial_date = convert_date(parsed.initial_date)
+        print(initial_date)
         retriever = Retriever(initial_date=initial_date,
                               end_date=end_date,
                               market=parsed.market)
