@@ -31,7 +31,7 @@ def parse():
                         type=str, default=None)
     parser.add_argument("-m", "--market", dest="market",
                         help="Type of market: diario, intradiario",
-                        default="diario")
+                        type=str, default="diario")
     parser.add_argument("-o", "--organize", dest="organize",
                         help="If you ahve downloaded the files you can\
                         organize them in a single file", default=False)
@@ -87,12 +87,12 @@ class Retriever():
             market_code = "PIB_EV_H_1_" + session
 
         date = "_".join([day, month, year])
-        url = BASE_URL + "AGNO_" + str(year) + "/MES_" + str(month) + \
+        url = BASE_URL + "AGNO_" + year + "/MES_" + month + \
             "/TXT/INT_" + market_code + "_" + date + "_" + date + ".txt"
 
         return url
 
-    def retrieve_single_file(self, url):
+    def retrieve_data_single(self, url):
         """
         Retrieves only one file. No threading. Serves it as a pandas object
         or saves it as a csv.
@@ -120,7 +120,8 @@ class Retriever():
         for i in range(1, 6):
             intra_specific = path.join(self.path_intradiario,
                                        "intra_" + str(i))
-            if not path.join(intra_specific):
+
+            if not path.exists(intra_specific):
                 mkdir(intra_specific)
 
     def obtain_data(self):
@@ -129,18 +130,27 @@ class Retriever():
             # TODO: implement getting files per range
             pass
         else:
-            if self.market == "diario":
-                year, month, day = generate_date_data(self.initial_date)
-                url = self.generate_url(year=year, month=month, day=day)
-                data = self.retrieve_single_file(url)
-                name = path.join(self.path_diario,
+            self.save_single()
+
+    def save_single(self):
+        year, month, day = generate_date_data(self.initial_date)
+        if self.market == "diario":
+            url = self.generate_url(year=year, month=month, day=day)
+            data = self.retrieve_data_single(url)
+            name = path.join(self.path_diario,
+                             year + "_" + month + "_" + day + ".txt")
+            with open(name, "w") as file:
+                file.write(data)
+
+        elif self.market == "intradiario":
+            for i in range(1, 6):
+                url = self.generate_url(year=year, month=month, day=day,
+                                        session=str(i))
+                data = self.retrieve_data_single(url)
+                name = path.join(self.path_intradiario, "intra_" + str(i),
                                  year + "_" + month + "_" + day + ".txt")
-                print(name)
                 with open(name, "w") as file:
                     file.write(data)
-            elif self.market == "intradiario":
-                # TODO: getting files for all 6 intraday markets
-                pass
 
 
 def convert_date(initial_date=None):
